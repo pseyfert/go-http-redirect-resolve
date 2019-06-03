@@ -10,29 +10,17 @@
  * or submit itself to any jurisdiction.
  */
 
-package main
+package resolve
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"regexp"
 	"time"
 )
 
-func main() {
-	flag.Parse()
-
-	if flag.NArg() != 1 {
-		fmt.Fprintf(os.Stderr, "no url for resolution provided\n")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	myurl := flag.Args()[0]
-
+func Resolve(myurl string) (string, error) {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -43,8 +31,8 @@ func main() {
 
 	req, err := http.NewRequest("GET", myurl, nil)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "could not make http request: %s\n", err)
-		os.Exit(1)
+		err = fmt.Errorf("could not make http request: %v\n", err)
+		return "", err
 	}
 	req.Header.Set("User-Agent", "redirect-resolver")
 	r, reqerr := c.Do(req)
@@ -52,26 +40,18 @@ func main() {
 		// Get https://github.com/cornellius-gp/gpytorch: remote error: protocol version not supported
 		match, err := regexp.MatchString("Get .*: remote error: protocol version not supported", reqerr.Error())
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "regexp compilation error: %s\n", err)
-			os.Exit(2)
+			err = fmt.Errorf("regexp compilation error: %v\n", err)
+			return "", err
 		}
 		if match {
 			re1 := regexp.MustCompile("^Get ")
 			re2 := regexp.MustCompile(": remote error: protocol version not supported$")
 			intermediate := re1.ReplaceAllString(reqerr.Error(), "")
 			bestguess := re2.ReplaceAllString(intermediate, "")
-			fmt.Println(bestguess)
-			os.Exit(0)
+			return bestguess, nil
 		}
-		fmt.Fprintf(os.Stderr, "could not handle request: %s\n", reqerr)
-		os.Exit(1)
+		err = fmt.Errorf("could not handle request: %v\n", reqerr)
+		return "", err
 	}
-	// l, err := r.Location()
-	// if err != nil {
-	//  fmt.Printf("no location: %s", err)
-	// } else {
-	//  fmt.Printf("returned: %s", l)
-	// }
-	lastUrl := r.Request.URL.String()
-	fmt.Println(lastUrl)
+	return r.Request.URL.String(), nil
 }
